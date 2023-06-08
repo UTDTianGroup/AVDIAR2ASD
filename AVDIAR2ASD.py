@@ -9,6 +9,9 @@ import csv
 from tools.csv_tools import read_all_rows, write_all_rows
 from tools.avdiar_tools import reorder_rows_by_personID, readVideoProperties, read_speech_durations
 from tools.cleanData import filter_list_by_regex
+import glob, subprocess, tqdm, pandas
+from scipy.io import wavfile
+import cv2, numpy
 
 #Method to read the input arguments
 def parseArgs():
@@ -122,12 +125,61 @@ class AVDIAR2ASD():
                     row_to_write = [video_id, time_stamp, entity_box_x1, entity_box_y1, entity_box_x2, entity_box_y2, label, entity_id, label_id, instance_id]
                     csvwriter.writerow(row_to_write)
 
+    def copyOrigVideos(self):
+        allVidNames = os.listdir(self.source_dir)
+        allVidNames = filter_list_by_regex(allVidNames, 'Seq[0-9][0-9]-[0-5]P-S[0-9]M[0-9]')
+        dest_dir = os.path.join(self.target_dir, 'orig_videos')
+        os.makedirs(dest_dir, exist_ok=True)
+        for video_name in allVidNames:
+            src_video_path = os.path.join(self.source_dir, video_name, 'Video', video_name+'_CAM1.mp4')
+            dest_video_path = os.path.join(dest_dir, video_name+'.mp4')
+            cmd = 'cp '+src_video_path+' '+dest_video_path
+            os.system(cmd)
 
-    def extractAudio(self):
-        pass
+    def extractOrigAudio(self):
+        orig_audio_dir = os.path.join(self.target_dir, 'orig_audios')
+        os.makedirs(orig_audio_dir, exist_ok=True)
+        videos = glob.glob("%s/*"%(os.path.join(self.target_dir, 'orig_videos')))
+        for videoPath in tqdm.tqdm(videos):
+            audioPath = '%s/%s'%(orig_audio_dir, videoPath.split('/')[-1].split('.')[0] + '.wav')
+            cmd = ("ffmpeg -y -i %s -async 1 -ac 1 -vn -acodec pcm_s16le -ar 16000 -threads 8 %s -loglevel panic" % (videoPath, audioPath))
+            subprocess.call(cmd, shell=True, stdout=None)
 
-    def extractFrames(self):
-        pass
+    def extract_audio_clips(self):
+        # Take 3 minutes to extract the audio clips
+        dic = {'train':'train', 'val':'val', 'test':'test'}
+        for dataType in ['train', 'val', 'test']:
+            df = pandas.read_csv(os.path.join(self.target_dir, 'csv', '%s_labels.csv'%(dataType)), engine='python')
+            dfNeg = pandas.concat([df[df['label_id'] == 0], df[df['label_id'] == 2]])
+            dfPos = df[df['label_id'] == 1]
+            insNeg = dfNeg['instance_id'].unique().tolist()
+            insPos = dfPos['instance_id'].unique().tolist()
+            df = pandas.concat([dfPos, dfNeg]).reset_index(drop=True)
+            df = df.sort_values(['entity_id', 'frame_timestamp']).reset_index(drop=True)
+            entityList = df['entity_id'].unique().tolist()
+            df = df.groupby('entity_id')
+            audioFeatures = {}
+            outDir = os.path.join(self.target_dir, 'clips_audios', dataType)
+            audioDir = os.path.join(self.target_dir, 'orig_audios')
+            for l in df['video_id'].unique().tolist():
+                d = os.path.join(outDir, l[0])
+                if not os.path.isdir(d):
+                    os.makedirs(d)
+            for entity in tqdm.tqdm(entityList, total = len(entityList)):
+                insData = df.get_group(entity)
+                videoKey = insData.iloc[0]['video_id']
+                start = insData.iloc[0]['frame_timestamp']
+                end = insData.iloc[-1]['frame_timestamp']
+                entityID = insData.iloc[0]['entity_id']
+                insPath = os.path.join(outDir, videoKey, entityID+'.wav')
+                if videoKey not in audioFeatures.keys():                
+                    audioFile = os.path.join(audioDir, videoKey+'.wav')
+                    sr, audio = wavfile.read(audioFile)
+                    audioFeatures[videoKey] = audio
+                audioStart = int(float(start)*sr)
+                audioEnd = int(float(end)*sr)
+                audioData = audioFeatures[videoKey][audioStart:audioEnd]
+                wavfile.write(insPath, sr, audioData)
 
     def train_val_split(self, all_labels_file_name='all_labels.csv', trainSplitFactor=0.7, valSplitFactor=0.1, testSplitFactor=0.2):
         #Method to split the labels into train, val and test sets.
@@ -149,11 +201,58 @@ class AVDIAR2ASD():
         write_all_rows(valLabelsPath, valRows, header=first_row)
         write_all_rows(testLabelsPath, testRows, header=first_row)
 
+    def extract_video_clips(self):
+    
+        dic = {'train':'train', 'val':'train', 'test':'test'}
+        for dataType in ['train', 'val', 'test']:
+            df = pandas.read_csv(os.path.join(self.target_dir, 'csv', '%s_labels.csv'%(dataType)))
+            dfNeg = pandas.concat([df[df['label_id'] == 0], df[df['label_id'] == 2]])
+            dfPos = df[df['label_id'] == 1]
+            insNeg = dfNeg['instance_id'].unique().tolist()
+            insPos = dfPos['instance_id'].unique().tolist()
+            df = pandas.concat([dfPos, dfNeg]).reset_index(drop=True)
+            df = df.sort_values(['entity_id', 'frame_timestamp']).reset_index(drop=True)
+            entityList = df['entity_id'].unique().tolist()
+            df = df.groupby('entity_id')
+            outDir = os.path.join(self.target_dir, 'clips_videos', dataType)
+            
+            for l in df['video_id'].unique().tolist():
+                d = os.path.join(outDir, l[0])
+                if not os.path.isdir(d):
+                    os.makedirs(d)
+            for entity in tqdm.tqdm(entityList, total = len(entityList)):
+                insData = df.get_group(entity)
+                videoKey = insData.iloc[0]['video_id']
+                entityID = insData.iloc[0]['entity_id']
+                videoDir = os.path.join(self.target_dir, 'orig_videos')
+                videoFile = glob.glob(os.path.join(videoDir, '{}.*'.format(videoKey)))[0]
+                V = cv2.VideoCapture(videoFile)
+                insDir = os.path.join(os.path.join(outDir, videoKey, entityID))
+                if not os.path.isdir(insDir):
+                    os.makedirs(insDir)
+                j = 0
+                for _, row in insData.iterrows():
+                    imageFilename = os.path.join(insDir, str("%.2f"%row['frame_timestamp'])+'.jpg')
+                    V.set(cv2.CAP_PROP_POS_MSEC, row['frame_timestamp'] * 1e3)
+                    _, frame = V.read()
+                    h = numpy.size(frame, 0)
+                    w = numpy.size(frame, 1)
+                    x1 = int(row['entity_box_x1'] * w)
+                    y1 = int(row['entity_box_y1'] * h)
+                    x2 = int(row['entity_box_x2'] * w)
+                    y2 = int(row['entity_box_y2'] * h)
+                    face = frame[y1:y2, x1:x2, :]
+                    j = j+1
+                    cv2.imwrite(imageFilename, face)
 
 if __name__=="__main__":
     args = parseArgs()
 
     Conv2ASDOb = AVDIAR2ASD(args.dataPathAVDIAR, args.dataPathAVDIAR_ASD)
 
-    Conv2ASDOb.createASDLabelCsv()
-    Conv2ASDOb.train_val_split()
+    # Conv2ASDOb.createASDLabelCsv()
+    # Conv2ASDOb.train_val_split()
+    # Conv2ASDOb.copyOrigVideos()
+    # Conv2ASDOb.extractOrigAudio()
+    # Conv2ASDOb.extract_audio_clips()
+    Conv2ASDOb.extract_video_clips()
