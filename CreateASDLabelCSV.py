@@ -47,7 +47,10 @@ class AVDIAR2ASD():
 
                 rttm_file_path = os.path.join(self.source_dir, video_id, 'GroundTruth/speakers.rttm')
                 numPersons = int(video_id.split('-')[1][0])
-                person_speech_durations = read_speech_durations(rttm_file_path, numPersons)
+                if video_id=='Seq29-3P-S1M0':
+                    person_speech_durations = read_speech_durations(rttm_file_path, numPersons, True)
+                else:
+                    person_speech_durations = read_speech_durations(rttm_file_path, numPersons)
                 face_bb_file_path = os.path.join(self.source_dir, video_id, 'GroundTruth/face_bb.txt')
                 face_bbs_all_rows = read_all_rows(face_bb_file_path)
                 
@@ -71,9 +74,10 @@ class AVDIAR2ASD():
                     entity_box_x2 = entity_box_x2/W
                     entity_box_y2 = entity_box_y2/H 
                     
-                    if len(person_speech_durations) > 0:
+                    if person_speech_durations:
                         
-                        current_speech_durations = person_speech_durations[p_id-1] #Person ID is 1 indexed
+                        current_speech_durations = person_speech_durations[p_id]
+                        
                         if len(current_speech_durations)>0:
                             if time_stamp < current_speech_durations[0][0]:
                                 label_id = 0 #Current timestamp is before the first speech duration
@@ -81,13 +85,13 @@ class AVDIAR2ASD():
                                 for dur in current_speech_durations:
                                     start_time = dur[0]
                                     end_time = dur[1]
-                                    if time_stamp < start_time:
+                                    if time_stamp > end_time:
                                         continue
-                                    elif time_stamp > end_time:
-                                        label_id = 0
+                                    elif time_stamp >= start_time:
+                                        label_id = 1
                                         break
                                     else:
-                                        label_id = 1
+                                        label_id = 0
                                         break
                         else:
                             label_id=0

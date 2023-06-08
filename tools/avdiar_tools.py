@@ -1,4 +1,5 @@
 import json
+import copy
 from tools.csv_tools import read_all_rows
 
 def reorder_rows_by_personID(rows, frame_col_index, id_col_index, num_persons):
@@ -10,9 +11,9 @@ def reorder_rows_by_personID(rows, frame_col_index, id_col_index, num_persons):
     num_persons : The number of persons corresponding to this list
     """
 
-    #If there is only person in the list then there no need to reorder the list
-    if num_persons==1:
-        return rows
+    # #If there is only person in the list then there no need to reorder the list
+    # if num_persons==1:
+    #     return rows
     
     reorderedRows = []
     rowAppended = [False for i in range(len(rows))] #Boolean value corresponding to each row in rows indicating whether the row has been appended to reorderedRows.
@@ -53,7 +54,7 @@ def reorder_rows_by_personID(rows, frame_col_index, id_col_index, num_persons):
 
 def readVideoProperties(jsonFilePath):
     #Funtion to Read video properties from the json file of the video
-    print('json file path ', jsonFilePath)
+    
     fhd = open(jsonFilePath, 'r')
     data = json.load(fhd)
     video_length = float(data['Length_in_sec'])
@@ -69,27 +70,57 @@ def readVideoProperties(jsonFilePath):
     fhd.close()
     return video_length, video_name, numAudioChannel, audioSR, videoFPS, numImages, CalibrationID, W, H
 
-def read_speech_durations(rttmFilePath, num_persons):
+def read_speech_durations(rttmFilePath, num_persons, verbose=False):
     all_speech_rows = read_all_rows(rttmFilePath, delimiter=' ')
-    speech_durations = []
+    if verbose:
+        print('all speech rows ', all_speech_rows)
+    speech_durations = {}
     currentPersonID = 0
     if len(all_speech_rows)>1:
         for rowInd in range(len(all_speech_rows)):
+            if verbose:
+                print('rowInd ', rowInd)
 
             if all_speech_rows[rowInd][0] == 'SPKR-INFO':
+                if verbose:
+                    print('reading SPKR-INFO ', all_speech_rows[rowInd])
                 if rowInd != 0:
-                    speech_durations.append(current_speech_durations) 
+                    speech_durations[currentPersonID] = copy.deepcopy(current_speech_durations)
+                    if verbose:
+                        print('appending speech durations when rowInd not 0 ', current_speech_durations)
+                        print('current person id ', currentPersonID)
+                        print('updated speech durations ', speech_durations)
+
                 current_speech_durations = []
                 
                 nextPersonID = int(all_speech_rows[rowInd][7].split('-')[1])
+                if verbose:
+                    print('next person id ', nextPersonID)
+                    print('current person id ', currentPersonID)
                 if nextPersonID == currentPersonID + 1:
                     currentPersonID = nextPersonID
+                    if verbose:
+                        print('next person ID is on point ', nextPersonID)
+                        print('current person id ', currentPersonID)
                 else:
                     for personID in range(currentPersonID+1, num_persons+1):
                         if nextPersonID != personID:
-                            speech_durations.append(current_speech_durations)
+                            
+                            speech_durations[personID] = copy.deepcopy(current_speech_durations)
+                            if verbose:
+                                print('Supposed to be appending empty duration list ', current_speech_durations)
+                                print('updated speech durations ', speech_durations)
+                                print('next person id ', nextPersonID)
+                                print('current person id ', currentPersonID)
+                                print('person id ', personID)
                         else:
                             currentPersonID = personID
+                            if verbose:
+                                print('Found the rignt person after skipping some ')
+                                print('speech durations ', speech_durations)
+                                print('nextPersonID ', nextPersonID)
+                                print('current person id ', currentPersonID)
+                                print('person id ', personID)
                             break
             else:
                 currentRow = all_speech_rows[rowInd]
@@ -97,6 +128,10 @@ def read_speech_durations(rttmFilePath, num_persons):
                 dur = float(currentRow[4])
                 end_time = start_time + dur
                 current_speech_durations.append((start_time, end_time))
+                if verbose:
+                    print('appending to current_speech_durations ', current_speech_durations)
 
-        speech_durations.append(current_speech_durations) #For the last speaker
+        speech_durations[currentPersonID] = copy.deepcopy(current_speech_durations) #For the last speaker
+        if verbose:
+            print('final speech durations ', speech_durations)
     return speech_durations
