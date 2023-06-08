@@ -6,7 +6,7 @@ import sys
 import os
 import argparse
 import csv
-from tools.csv_tools import read_all_rows
+from tools.csv_tools import read_all_rows, write_all_rows
 from tools.avdiar_tools import reorder_rows_by_personID, readVideoProperties, read_speech_durations
 from tools.cleanData import filter_list_by_regex
 
@@ -25,13 +25,14 @@ class AVDIAR2ASD():
     def __init__(self, AVDIAR_Path, ASD_Path):
         self.source_dir = AVDIAR_Path
         self.target_dir = ASD_Path
+        
         os.makedirs(self.target_dir, exist_ok=True)
 
     def createASDLabelCsv(self):
         csvDir = os.path.join(self.target_dir, 'csv')
         os.makedirs(csvDir, exist_ok=True)
 
-        csvFilePath = os.path.join(csvDir, 'orig.csv') #File to save original path of all 
+        csvFilePath = os.path.join(csvDir, 'all_labels.csv') #File to save original path of all 
         
         with open(csvFilePath,'w') as csvfile:
             csvwriter = csv.writer(csvfile)
@@ -47,10 +48,8 @@ class AVDIAR2ASD():
 
                 rttm_file_path = os.path.join(self.source_dir, video_id, 'GroundTruth/speakers.rttm')
                 numPersons = int(video_id.split('-')[1][0])
-                if video_id=='Seq29-3P-S1M0':
-                    person_speech_durations = read_speech_durations(rttm_file_path, numPersons, True)
-                else:
-                    person_speech_durations = read_speech_durations(rttm_file_path, numPersons)
+              
+                person_speech_durations = read_speech_durations(rttm_file_path, numPersons)
                 face_bb_file_path = os.path.join(self.source_dir, video_id, 'GroundTruth/face_bb.txt')
                 face_bbs_all_rows = read_all_rows(face_bb_file_path)
                 
@@ -124,14 +123,32 @@ class AVDIAR2ASD():
                     csvwriter.writerow(row_to_write)
 
 
-    def extractAudio():
+    def extractAudio(self):
         pass
 
-    def extractFrames():
+    def extractFrames(self):
         pass
 
-    def train_val_split():
-        pass
+    def train_val_split(self, all_labels_file_name='all_labels.csv', trainSplitFactor=0.7, valSplitFactor=0.1, testSplitFactor=0.2):
+        #Method to split the labels into train, val and test sets.
+        all_labels_path = os.path.join(self.target_dir, 'csv', all_labels_file_name)
+        all_labels_rows = read_all_rows(all_labels_path)
+        all_labels_rows = all_labels_rows[1:] #Removing the header
+        totalRows = len(all_labels_rows)
+        numTrainRows = int(trainSplitFactor*totalRows)
+        numValRows = int(valSplitFactor*totalRows)
+        numTestRows = int(testSplitFactor*totalRows)
+        trainRows = all_labels_rows[0:numTrainRows]
+        valRows = all_labels_rows[numTrainRows:numTrainRows+numValRows]
+        testRows = all_labels_rows[numTrainRows+numValRows:]
+        trainLabelsPath = os.path.join(self.target_dir, 'csv', 'train_labels.csv')
+        valLabelsPath = os.path.join(self.target_dir, 'csv', 'val_labels.csv')
+        testLabelsPath = os.path.join(self.target_dir, 'csv', 'test_labels.csv')
+        first_row = ['video_id','frame_timestamp','entity_box_x1','entity_box_y1','entity_box_x2','entity_box_y2','label','entity_id','label_id','instance_id']
+        write_all_rows(trainLabelsPath, trainRows, header=first_row)
+        write_all_rows(valLabelsPath, valRows, header=first_row)
+        write_all_rows(testLabelsPath, testRows, header=first_row)
+
 
 if __name__=="__main__":
     args = parseArgs()
@@ -139,3 +156,4 @@ if __name__=="__main__":
     Conv2ASDOb = AVDIAR2ASD(args.dataPathAVDIAR, args.dataPathAVDIAR_ASD)
 
     Conv2ASDOb.createASDLabelCsv()
+    Conv2ASDOb.train_val_split()
