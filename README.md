@@ -1,6 +1,7 @@
 # AVDIAR2ASD
 Code to relabel AVDIAR dataset for the ASD task.
 
+This code has been tested with Python version 3.9.12
 
 ##Step 1
 
