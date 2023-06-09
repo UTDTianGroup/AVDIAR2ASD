@@ -250,9 +250,9 @@ if __name__=="__main__":
 
     Conv2ASDOb = AVDIAR2ASD(args.dataPathAVDIAR, args.dataPathAVDIAR_ASD)
 
-    # Conv2ASDOb.createASDLabelCsv()
-    # Conv2ASDOb.train_val_split()
-    # Conv2ASDOb.copyOrigVideos()
-    # Conv2ASDOb.extractOrigAudio()
-    # Conv2ASDOb.extract_audio_clips()
+    Conv2ASDOb.createASDLabelCsv()
+    Conv2ASDOb.train_val_split()
+    Conv2ASDOb.copyOrigVideos()
+    Conv2ASDOb.extractOrigAudio()
+    Conv2ASDOb.extract_audio_clips()
     Conv2ASDOb.extract_video_clips()
