@@ -203,7 +203,7 @@ class AVDIAR2ASD():
 
     def extract_video_clips(self):
     
-        dic = {'train':'train', 'val':'train', 'test':'test'}
+        dic = {'train':'train', 'val':'val', 'test':'test'}
         for dataType in ['train', 'val', 'test']:
             df = pandas.read_csv(os.path.join(self.target_dir, 'csv', '%s_labels.csv'%(dataType)))
             dfNeg = pandas.concat([df[df['label_id'] == 0], df[df['label_id'] == 2]])
@@ -244,6 +244,51 @@ class AVDIAR2ASD():
                     face = frame[y1:y2, x1:x2, :]
                     j = j+1
                     cv2.imwrite(imageFilename, face)
+    
+    def createLoaderFiles(self):
+        dic = {'train':'train', 'val':'val', 'test':'test'}
+        for dataType in ['train', 'val', 'test']:
+            labelFilePath = "{datasetPath}/csv/{data_type}_labels.csv".format(datasetPath=self.target_dir, data_type=dic[dataType])
+            loaderFilePath = "{datasetPath}/csv/{data_type}_loader.csv".format(datasetPath=self.target_dir, data_type=dic[dataType])
+
+            csvwriterfile = open(loaderFilePath, 'w')
+            csvwriter = csv.writer(csvwriterfile, delimiter='\t', quoting=csv.QUOTE_NONE)
+
+            firstEntity = True
+            with open(labelFilePath, 'r') as csvfile:
+                csvreader = csv.reader(csvfile)
+                allRows = list(csvreader)
+                
+                labelsList = []
+                ctLabels = 0
+                for row in allRows:
+                    if row[0]=='video_id':
+                        continue
+                    video_id = row[0]
+
+                    timestamp = float(row[1])
+                    entityID = row[7]
+                    if firstEntity:
+                        prevEntityID = entityID
+                        firstEntity = False
+                        fps = 25
+                        
+                    label = int(row[8])
+                    if entityID == prevEntityID:
+                        labelsList.append(label)
+                        ctLabels = ctLabels + 1
+                    else:
+                        rowToWrite = [prevEntityID, ctLabels, fps, labelsList, 2535]
+                        csvwriter.writerow(rowToWrite)
+                        labelsList = []
+                        ctLabels = 0
+                        prevEntityID = entityID
+                        labelsList.append(label)
+                        ctLabels += 1
+                        fps = 25
+                
+                rowToWrite = [entityID, ctLabels, fps, labelsList, 2535]
+                csvwriter.writerow(rowToWrite)
 
 if __name__=="__main__":
     args = parseArgs()
@@ -256,3 +301,4 @@ if __name__=="__main__":
     Conv2ASDOb.extractOrigAudio()
     Conv2ASDOb.extract_audio_clips()
     Conv2ASDOb.extract_video_clips()
+    Conv2ASDOb.createLoaderFiles()
